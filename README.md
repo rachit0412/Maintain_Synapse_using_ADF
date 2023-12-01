@@ -1,1 +1,1 @@
-# Azure-Data-Factory
+The provided codes define Azure Data Factory pipelines for managing and scaling dedicated SQL pools in Azure Synapse Analytics workspaces, including activities to retrieve pool information, filter relevant pools, check and control pool states (pause/resume), and dynamically scale performance levels as needed.
