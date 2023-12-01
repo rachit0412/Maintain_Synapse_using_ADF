@@ -1,0 +1,181 @@
+{
+    "name": "PL_CHECK_RUN_SCALE_SYNAPSE_SQLPOOL",
+    "properties": {
+        "description": "pipeline to be used to scale the dedicated SQL pool up or down.",
+        "activities": [
+            {
+                "name": "Get list of dedicated SQL pools",
+                "type": "WebActivity",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "7.00:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "url": {
+                        "value": "@concat('https://management.azure.com/subscriptions/',pipeline().parameters.SubscriptionID,'/resourceGroups/',pipeline().parameters.ResourceGroup,'/providers/Microsoft.Synapse/workspaces/',pipeline().parameters.WorkspaceName,'/sqlPools?api-version=2021-06-01-preview')",
+                        "type": "Expression"
+                    },
+                    "method": "GET",
+                    "disableCertValidation": false,
+                    "authentication": {
+                        "type": "MSI",
+                        "resource": "https://management.azure.com/"
+                    }
+                }
+            },
+            {
+                "name": "Filter sql pools",
+                "description": "pools that are not controlled by this mechanism",
+                "type": "Filter",
+                "dependsOn": [
+                    {
+                        "activity": "Get list of dedicated SQL pools",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Get list of dedicated SQL pools').output.value",
+                        "type": "Expression"
+                    },
+                    "condition": {
+                        "value": "@not(endswith(item().name,'prod'))",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "ForEach pool",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "Filter sql pools",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Filter sql pools').output.value",
+                        "type": "Expression"
+                    },
+                    "activities": [
+                        {
+                            "name": "GetState",
+                            "type": "WebActivity",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "url": {
+                                    "value": "@concat('https://management.azure.com/subscriptions/',pipeline().parameters.SubscriptionID,'/resourceGroups/',pipeline().parameters.ResourceGroup,'/providers/Microsoft.Synapse/workspaces/',pipeline().parameters.WorkspaceName,'/sqlPools/',item().name,'?api-version=2021-06-01-preview')",
+                                    "type": "Expression"
+                                },
+                                "method": "GET",
+                                "authentication": {
+                                    "type": "MSI",
+                                    "resource": "https://management.azure.com/"
+                                }
+                            }
+                        },
+                        {
+                            "name": "Check-If-Matching",
+                            "description": "The Pipeline checks whether there is a need of scaling the server or it is already scaled out/in.",
+                            "type": "IfCondition",
+                            "dependsOn": [
+                                {
+                                    "activity": "GetState",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "expression": {
+                                    "value": "@bool(startswith(activity('GetState').output.sku.name,pipeline().parameters.PerformanceLevel))",
+                                    "type": "Expression"
+                                },
+                                "ifFalseActivities": [
+                                    {
+                                        "name": "PL_SCALE_SYNAPSE_SQLPOOL",
+                                        "type": "ExecutePipeline",
+                                        "dependsOn": [],
+                                        "userProperties": [],
+                                        "typeProperties": {
+                                            "pipeline": {
+                                                "referenceName": "PL_SCALE_SYNAPSE_SQLPOOL",
+                                                "type": "PipelineReference"
+                                            },
+                                            "waitOnCompletion": true,
+                                            "parameters": {
+                                                "ResourceGroup": {
+                                                    "value": "@pipeline().parameters.ResourceGroup",
+                                                    "type": "Expression"
+                                                },
+                                                "SubscriptionID": {
+                                                    "value": "@pipeline().parameters.SubscriptionID",
+                                                    "type": "Expression"
+                                                },
+                                                "WorkspaceName": {
+                                                    "value": "@pipeline().parameters.WorkspaceName",
+                                                    "type": "Expression"
+                                                },
+                                                "SQLPoolName": {
+                                                    "value": "@item().name",
+                                                    "type": "Expression"
+                                                },
+                                                "PerformanceLevel": {
+                                                    "value": "@pipeline().parameters.PerformanceLevel",
+                                                    "type": "Expression"
+                                                }
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        ],
+        "parameters": {
+            "ResourceGroup": {
+                "type": "string",
+                "defaultValue": "MSC-RSG-<ProjectName>-DEV"
+            },
+            "SubscriptionID": {
+                "type": "string",
+                "defaultValue": "<SubcriptionID>"
+            },
+            "WorkspaceName": {
+                "type": "string",
+                "defaultValue": "mscsyp<ProjectName>dev"
+            },
+            "PerformanceLevel": {
+                "type": "string",
+                "defaultValue": "DW200c"
+            }
+        },
+        "folder": {
+            "name": "Process"
+        },
+        "annotations": []
+    }
+}
