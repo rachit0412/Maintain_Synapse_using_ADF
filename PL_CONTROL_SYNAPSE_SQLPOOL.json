@@ -1,0 +1,208 @@
+{
+    "name": "PL_CONTROL_SYNAPSE_SQLPOOL",
+    "properties": {
+        "activities": [
+            {
+                "name": "Get list of dedicated SQL pools",
+                "type": "WebActivity",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "7.00:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "url": {
+                        "value": "@concat('https://management.azure.com/subscriptions/',pipeline().parameters.SubscriptionID,'/resourceGroups/',pipeline().parameters.ResourceGroup,'/providers/Microsoft.Synapse/workspaces/',pipeline().parameters.WorkspaceName,'/sqlPools?api-version=2019-06-01-preview')",
+                        "type": "Expression"
+                    },
+                    "method": "GET",
+                    "disableCertValidation": false,
+                    "authentication": {
+                        "type": "MSI",
+                        "resource": "https://management.azure.com/"
+                    }
+                }
+            },
+            {
+                "name": "Filter sql pools",
+                "description": "pools that are not controlled by this mechanism",
+                "type": "Filter",
+                "dependsOn": [
+                    {
+                        "activity": "Get list of dedicated SQL pools",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Get list of dedicated SQL pools').output.value",
+                        "type": "Expression"
+                    },
+                    "condition": {
+                        "value": "@not(endswith(item().name,'prod'))",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "ForEach pool",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "Filter sql pools",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Filter sql pools').output.value",
+                        "type": "Expression"
+                    },
+                    "activities": [
+                        {
+                            "name": "CheckState",
+                            "type": "WebActivity",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "url": {
+                                    "value": "@concat('https://management.azure.com/subscriptions/',pipeline().parameters.SubscriptionID,'/resourceGroups/',pipeline().parameters.ResourceGroup,'/providers/Microsoft.Synapse/workspaces/',pipeline().parameters.WorkspaceName,'/sqlPools/',item().name,'?api-version=2019-06-01-preview')",
+                                    "type": "Expression"
+                                },
+                                "method": "GET",
+                                "authentication": {
+                                    "type": "MSI",
+                                    "resource": "https://management.azure.com/"
+                                }
+                            }
+                        },
+                        {
+                            "name": "State-PauseOrResume",
+                            "type": "Switch",
+                            "dependsOn": [
+                                {
+                                    "activity": "CheckState",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "on": {
+                                    "value": "@concat(activity('CheckState').output.properties.status,'-',pipeline().parameters.PauseOrResume)",
+                                    "type": "Expression"
+                                },
+                                "cases": [
+                                    {
+                                        "value": "Paused-resume",
+                                        "activities": [
+                                            {
+                                                "name": "SQLPoolResume",
+                                                "type": "WebActivity",
+                                                "dependsOn": [],
+                                                "policy": {
+                                                    "timeout": "7.00:00:00",
+                                                    "retry": 0,
+                                                    "retryIntervalInSeconds": 30,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "url": {
+                                                        "value": "@concat('https://management.azure.com/subscriptions/',pipeline().parameters.SubscriptionID,'/resourceGroups/',pipeline().parameters.ResourceGroup,'/providers/Microsoft.Synapse/workspaces/',pipeline().parameters.WorkspaceName,'/sqlPools/',activity('CheckState').output.name,'/resume?api-version=2019-06-01-preview')",
+                                                        "type": "Expression"
+                                                    },
+                                                    "method": "POST",
+                                                    "body": "Pause and Resume",
+                                                    "authentication": {
+                                                        "type": "MSI",
+                                                        "resource": "https://management.azure.com/"
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "value": "Online-pause",
+                                        "activities": [
+                                            {
+                                                "name": "SQLPoolPause",
+                                                "type": "WebActivity",
+                                                "dependsOn": [],
+                                                "policy": {
+                                                    "timeout": "7.00:00:00",
+                                                    "retry": 0,
+                                                    "retryIntervalInSeconds": 30,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "url": {
+                                                        "value": "@concat('https://management.azure.com/subscriptions/',pipeline().parameters.SubscriptionID,'/resourceGroups/',pipeline().parameters.ResourceGroup,'/providers/Microsoft.Synapse/workspaces/',pipeline().parameters.WorkspaceName,'/sqlPools/',activity('CheckState').output.name,'/pause?api-version=2019-06-01-preview')",
+                                                        "type": "Expression"
+                                                    },
+                                                    "method": "POST",
+                                                    "body": "Pause and Resume",
+                                                    "authentication": {
+                                                        "type": "MSI",
+                                                        "resource": "https://management.azure.com/"
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        ],
+        "parameters": {
+            "ResourceGroup": {
+                "type": "string",
+                "defaultValue": "MSC-RSG-<ProjectName>-DEV"
+            },
+            "SubscriptionID": {
+                "type": "string",
+                "defaultValue": "<SubscriptionID>"
+            },
+            "WorkspaceName": {
+                "type": "string",
+                "defaultValue": "mscsyp<ProjectName>dev"
+            },
+            "SQLPoolName": {
+                "type": "string",
+                "defaultValue": "<SQLPoolName>"
+            },
+            "PauseOrResume": {
+                "type": "string",
+                "defaultValue": "pause"
+            }
+        },
+        "folder": {
+            "name": "Process"
+        },
+        "annotations": []
+    }
+}
