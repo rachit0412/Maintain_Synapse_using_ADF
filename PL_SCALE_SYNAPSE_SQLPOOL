@@ -1,0 +1,115 @@
+"name": "PL_SCALE_SYNAPSE_SQLPOOL",
+    "properties": {
+        "description": "pipeline to be used to scale the dedicated SQL pool up or down.",
+        "activities": [
+            {
+                "name": "Check-If-Online-or-Paused",
+                "description": "The Pipeline can only continue when the status is Paused or Online and not one of the other statuses.",
+                "type": "IfCondition",
+                "dependsOn": [
+                    {
+                        "activity": "GetState",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "expression": {
+                        "value": "@or(bool(startswith(activity('GetState').output.properties.status,'Paused')),bool(startswith(activity('GetState').output.properties.status,'Online')))",
+                        "type": "Expression"
+                    },
+                    "ifTrueActivities": [
+                        {
+                            "name": "SQLPoolScaling",
+                            "type": "WebActivity",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.00:20:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "url": {
+                                    "value": "@concat('https://management.azure.com/subscriptions/',pipeline().parameters.SubscriptionID,'/resourceGroups/',pipeline().parameters.ResourceGroup,'/providers/Microsoft.Synapse/workspaces/',pipeline().parameters.WorkspaceName,'/sqlPools/',activity('GetState').output.name,'/?api-version=2019-06-01-preview')",
+                                    "type": "Expression"
+                                },
+                                "method": "PATCH",
+                                "headers": {
+                                    "Content-Type": "application/json"
+                                },
+                                "body": {
+                                    "value": "{ \"sku\": { \"name\": '@{pipeline().parameters.PerformanceLevel}' } }",
+                                    "type": "Expression"
+                                },
+                                "authentication": {
+                                    "type": "MSI",
+                                    "resource": "https://management.azure.com/"
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "GetState",
+                "type": "WebActivity",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "7.00:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "url": {
+                        "value": "@concat('https://management.azure.com/subscriptions/',pipeline().parameters.SubscriptionID,'/resourceGroups/',pipeline().parameters.ResourceGroup,'/providers/Microsoft.Synapse/workspaces/',pipeline().parameters.WorkspaceName,'/sqlPools/',pipeline().parameters.SQLPoolName,'?api-version=2021-06-01-preview')",
+                        "type": "Expression"
+                    },
+                    "method": "GET",
+                    "authentication": {
+                        "type": "MSI",
+                        "resource": "https://management.azure.com/"
+                    }
+                }
+            }
+        ],
+        "parameters": {
+            "ResourceGroup": {
+                "type": "string",
+                "defaultValue": "MSC-RSG-RISE-DEV"
+            },
+            "SubscriptionID": {
+                "type": "string",
+                "defaultValue": "be7d35e2-8fb2-47ab-9f7b-d504fa240f04"
+            },
+            "WorkspaceName": {
+                "type": "string",
+                "defaultValue": "mscsyprisedev"
+            },
+            "SQLPoolName": {
+                "type": "string",
+                "defaultValue": "RISEDWH"
+            },
+            "PerformanceLevel": {
+                "type": "string",
+                "defaultValue": "DW200c"
+            }
+        },
+        "variables": {
+            "SQLPoolNameBeingUsed": {
+                "type": "Array"
+            }
+        },
+        "folder": {
+            "name": "Process/Dependents"
+        },
+        "annotations": []
+    }
+}
